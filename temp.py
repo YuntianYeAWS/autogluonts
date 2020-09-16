@@ -14,8 +14,11 @@ from gluonts.gluonts_tqdm import tqdm
 input_names = ['past_target', 'future_target']
 from gluonts.model.simple_feedforward._estimator import  SimpleFeedForwardEstimator
 from dataset import dataset
-from gluonts.trainer import Trainer
+
 from asset import optimizer
+from gluonts.dataset.loader import TrainDataLoader
+from gluonts.trainer import Trainer
+
 with tqdm(training_data_loader) as it:
     for batch_no, data_entry in enumerate(it, start=1):
 
@@ -25,14 +28,52 @@ with tqdm(training_data_loader) as it:
     inputs = [data_entry[k] for k in input_names]
 
 dictionary_of_hyperparameters = {}
-dictionary_of_hyperparameters ['learning_rate'] = ag.Real(1e-3, 1e-2, log=True)
+#dictionary_of_hyperparameters ['learning_rate'] = ag.Real(1e-3, 1e-2, log=True)
 dictionary_of_hyperparameters['epochs']=ag.Choice(10, 20)
 
 class auto:
-    def __init__(self,dictionary_of_hyperparameters,training_data_loader):
+    def __init__(self,dictionary_of_hyperparameters):
+        search_config = {}
+        search_config['learning_rate'] = ag.Real(1e-3, 1e-2, log=True)
+        search_config['epochs'] = ag.Choice(40, 80)
         self.dictionary_of_hyperparameters = dictionary_of_hyperparameters
+        for config in search_config.keys():
+            if not config in self.dictionary_of_hyperparameters .keys():
+                self.dictionary_of_hyperparameters [config] = search_config[config]
+
         self.dataset = dataset
-        self.training_data_loader = training_data_loader
+        self.init_estimator  = SimpleFeedForwardEstimator(
+            num_hidden_dimensions=[10],
+            prediction_length=dataset.metadata.prediction_length,
+            context_length=100,
+            freq=dataset.metadata.freq,
+            trainer=Trainer(ctx="cpu",
+                            epochs=5,
+                            learning_rate=1e-3,
+                            num_batches_per_epoch=100
+                           )
+            )
+        transformation = estimator.create_transformation()
+        dtype = np.float32
+        num_workers = None
+        num_prefetch = None
+        shuffle_buffer_length = None
+        trainer = Trainer(ctx="cpu",
+                          epochs=1,
+                          learning_rate=0.01,
+                          num_batches_per_epoch=100
+                          )
+        self.training_data_loader = TrainDataLoader(
+            dataset=dataset.train,
+            transform=transformation,
+            batch_size=trainer.batch_size,
+            num_batches_per_epoch=trainer.num_batches_per_epoch,
+            ctx=trainer.ctx,
+            dtype=dtype,
+            num_workers=num_workers,
+            num_prefetch=num_prefetch,
+        )
+
 
     def train(self):
         with tqdm(self.training_data_loader) as it:
@@ -86,7 +127,21 @@ class auto:
                                                  reward_attr="accuracy")
         self.scheduler.run()
         self.scheduler.join_jobs()
-        self.best_config = self.scheduler.get_best_config()
-        self.best_task_id = self.scheduler.get_best_task_id()
-        return self.best_config,self.best_task_id
+
+
+    def get_best_estimator(self):
+        best_config =  self.scheduler.get_best_config()
+        print(best_config)
+        self.final_estimator = SimpleFeedForwardEstimator(
+            num_hidden_dimensions=[10],
+            prediction_length=dataset.metadata.prediction_length,
+            context_length=100,
+            freq=dataset.metadata.freq,
+            trainer=Trainer(ctx="cpu",
+                            epochs=best_config['epochs.choice'],
+                            learning_rate=best_config['learning_rate'],
+                            num_batches_per_epoch=100
+                            )
+            )
+        return self.final_estimator
 
